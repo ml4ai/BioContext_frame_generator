@@ -1,3 +1,4 @@
+import org.clulab.processors.Document
 import org.clulab.struct.Interval
 import org.clulab.utils.Serializer
 
@@ -5,17 +6,7 @@ import scala.collection.mutable.ListBuffer
 
 object FindIntersection extends App{
 
-  def readSerializedExtractions(path:String):Map[String, Seq[PaperExtraction]] = {
-    val data = Serializer.load[Array[(String, Seq[PaperExtraction])]](path)
-    data.toMap
-  }
 
-  def readSerializedExtractions2(path:String):Map[String, Seq[PaperExtraction]] = {
-    val data = Serializer.load[Seq[(String, Seq[PaperExtraction])]](path)
-    data.toMap
-  }
-
-  def getEvents(data:Seq[PaperExtraction]):Seq[PaperExtraction] = data filter (_.grounding == "Event")
 
   def getIntersection(left:Seq[PaperExtraction], right:Seq[PaperExtraction]):Seq[PaperExtraction] = {
     // Small helper function
@@ -53,11 +44,11 @@ object FindIntersection extends App{
     intersection.toList.distinct
   }
 
-  val parsedAnnotations = readSerializedExtractions("parsed_annotations.ser")
-  val reachExtractions = readSerializedExtractions2("results2020.ser")
+  val parsedAnnotations = utils.readSerializedPaperAnnotations("parsed_annotations.ser")
+  val reachExtractions = utils.readSerializedExtractions("results2016.ser")
 
-  val parsedEvents = parsedAnnotations.mapValues(getEvents)
-  val reachEvents = reachExtractions.mapValues(getEvents)
+  val parsedEvents = parsedAnnotations.mapValues(t => utils.getEvents(t.extractions))
+  val reachEvents = reachExtractions.mapValues(utils.getEvents)
 
   for(pmcid <- parsedEvents.keys) yield {
     val parsed = parsedEvents(pmcid)
@@ -66,12 +57,5 @@ object FindIntersection extends App{
 
 
     println(s"$pmcid Original size: ${parsed.size}, Extracted size: ${extracted.distinct.size}, Intersection: ${intersection.size}")
-//    for(extraction <- reachEvents(pmcid))
-//      println(extraction)
   }
-
-//  for(extraction <- reachEvents("PMC4204162").distinct.sortBy(e => (e.sent, e.interval)))
-//        println(extraction)
-
-  val y = 0
 }

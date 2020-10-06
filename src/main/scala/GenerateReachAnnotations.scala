@@ -1,5 +1,6 @@
 import java.io.File
 
+import org.clulab.processors.Document
 import org.clulab.processors.bionlp.BioNLPProcessor
 import org.clulab.reach.ReachSystem
 import org.clulab.reach.mentions.{BioEventMention, BioMention, BioTextBoundMention, CorefEventMention}
@@ -18,7 +19,7 @@ object GenerateReachAnnotations extends App {
     tokens
   }
 
-  def extractFrom(path:String):Seq[BioMention] = {
+  def extractFrom(path:String):(Seq[BioMention], Document) = {
     val tokens = readTokens(path + "/sentences.txt")
 
     val doc = procAnnotator.mkDocumentFromTokens(tokens)
@@ -26,7 +27,7 @@ object GenerateReachAnnotations extends App {
     doc.text = Some(tokens.map(_.mkString(" ")).mkString("\n"))
     procAnnotator.annotate(doc)
 
-    reachSystem extractFrom doc
+    (reachSystem extractFrom doc, doc)
   }
 
   // initialize ReachSystem
@@ -43,7 +44,7 @@ object GenerateReachAnnotations extends App {
       val path = dir.getAbsolutePath
       val pmcid = dir.getName
       println(s"Processing $pmcid ...")
-      val extractions = extractFrom(path)
+      val (extractions, doc) = extractFrom(path)
       println(s"Finished $pmcid")
       val tups =
         extractions collect {
@@ -52,7 +53,7 @@ object GenerateReachAnnotations extends App {
           case m:BioTextBoundMention =>
             PaperExtraction(m.sentence, m.tokenInterval, m.text, m.grounding match { case Some(kb) => kb.nsId; case None => ""})
         }
-      pmcid -> tups
+      pmcid -> (tups, doc)
     }).seq
 
 

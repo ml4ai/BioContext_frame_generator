@@ -5,6 +5,8 @@ import org.clulab.utils.Serializer
 
 import scala.io.Source
 
+case class ManuallyAnnotatedData(extractions:Seq[PaperExtraction], annotations:Map[PaperExtraction, Seq[String]])
+
 object ParsePaperFiles extends App {
   val dir = "/Users/enrique/github/BioContext_corpus_private/data/papers/event_spans_Reach2016/"
 
@@ -117,7 +119,7 @@ object ParsePaperFiles extends App {
     lines map (_.split(" "))
   }
 
-  def parsePaperFiles(dirPath:String):Seq[PaperExtraction] = {
+  def parsePaperFiles(dirPath:String):ManuallyAnnotatedData  = {
     // First the event intervals
     val dir = new File(dirPath)
     val eventsFile = new File(dir, "event_intervals.txt")
@@ -130,15 +132,16 @@ object ParsePaperFiles extends App {
 
     val (annotatedEventsIntervals, eventAnnotations) = parsedAnnotatedEvents(annotatedEventsFile, docTokens)
 
-    (parseEvents(eventsFile, docTokens) ++
+    ManuallyAnnotatedData((parseEvents(eventsFile, docTokens) ++
      annotatedEventsIntervals ++
-    parseManualMentions(manualMentionsFile, docTokens)).distinct
+    parseManualMentions(manualMentionsFile, docTokens)).distinct,
+    eventAnnotations)
   }
 
 
   val paperDirs = for(f <- new File(dir).listFiles(); if f.isDirectory) yield f.getAbsolutePath
 
-  val extractions = paperDirs map (p => new File(p).getName -> parsePaperFiles(p))
+  val extractions = paperDirs.map(p => new File(p).getName -> parsePaperFiles(p)).toMap
 
   Serializer.save(extractions, "parsed_annotations.ser")
 

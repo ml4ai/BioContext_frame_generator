@@ -31,7 +31,7 @@ object GeneratePairs extends App with LazyLogging{
 
   // Then generate the set of candidate context mentions acceptable
   val validContexts =
-    paperAnnotations.values.flatMap(_.annotations.values).flatten.toSet
+    utils.generateValidContextIds(paperAnnotations)
 
   // Then read the extractions
   logger.info(s"Loading extractions from $inputExtractions")
@@ -39,7 +39,7 @@ object GeneratePairs extends App with LazyLogging{
 
   // Now generate the pairs
   val pairs =
-    (for((pmcid, annotations) <- paperAnnotations)
+    for((pmcid, annotations) <- paperAnnotations)
       yield {
         logger.info(s"Generating pairs for $pmcid")
         val extractions = paperExtractions(pmcid)
@@ -48,7 +48,7 @@ object GeneratePairs extends App with LazyLogging{
         // Count the distribution of labels for the current paper
         logger.info(s"$pmcid has ${pairs.count(_.isContext)} out of ${pairs.size}")
         pmcid -> pairs
-      }).toMap
+      }
 
   // Finally serialize the results
   logger.info(s"Saving pairs to $outputPairsPath")

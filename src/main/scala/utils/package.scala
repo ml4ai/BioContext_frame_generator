@@ -8,7 +8,7 @@ package object utils {
   }
 
   def readSerializedDocument(path:String):Map[String, Document] = {
-    val data = Serializer.load[Array[(String, (Seq[PaperExtraction], Document))]](path)
+    val data = Serializer.load[Seq[(String, (Seq[PaperExtraction], Document))]](path)
     data.toMap.mapValues(_._2)
   }
 
@@ -17,5 +17,13 @@ package object utils {
     data.toMap.mapValues(_._1)
   }
 
+  def readSerializedPairs(path:String):Map[String, Iterable[Pair]] = {
+    Serializer.load[Map[String, Iterable[Pair]]](path)
+  }
+
   def getEvents(data:Seq[PaperExtraction]):Seq[PaperExtraction] = data filter (_.grounding == "Event")
+
+  def generateValidContextIds(annotations:Map[String, ManuallyAnnotatedData]):Set[String] = {
+    annotations.values.flatMap(_.annotations.values).flatten.toSet
+  }
 }

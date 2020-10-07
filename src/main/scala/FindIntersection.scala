@@ -1,20 +1,25 @@
-import org.clulab.processors.Document
+import com.typesafe.config.ConfigFactory
 import org.clulab.struct.Interval
-import org.clulab.utils.Serializer
 
 import scala.collection.mutable.ListBuffer
 
-object FindIntersection extends App{
+/**
+ * Utility to compute the intersection of the annotated events and the paper extractions
+ */
+object FindIntersection extends App {
 
+  val config = ConfigFactory.load().getConfig("findIntersection")
 
+  val inputPaperData = config.getString("inputPaperData")
+  val inputExtractions = config.getString("inputExtractions")
 
-  def getIntersection(left:Seq[PaperExtraction], right:Seq[PaperExtraction]):Seq[PaperExtraction] = {
+  def getIntersection(left: Seq[PaperExtraction], right: Seq[PaperExtraction]): Seq[PaperExtraction] = {
     // Small helper function
-    def intersects(a:Interval, b:Interval):Boolean = {
+    def intersects(a: Interval, b: Interval): Boolean = {
       val (shorter, longer) = if (a.size <= b.size) (a, b) else (b, a)
-      if(longer contains shorter)
+      if (longer contains shorter)
         true
-      else if(shorter.intersect(longer).nonEmpty)
+      else if (shorter.intersect(longer).nonEmpty)
         true
       else
         false
@@ -34,8 +39,8 @@ object FindIntersection extends App{
         for{
           l <- gpBySentLeft(sentIx)
           r <- gpBySentRight(sentIx)
-        }{
-          if(intersects(l.interval, r.interval))
+        } {
+          if (intersects(l.interval, r.interval))
             intersection += l
         }
       }
@@ -44,13 +49,13 @@ object FindIntersection extends App{
     intersection.toList.distinct
   }
 
-  val parsedAnnotations = utils.readSerializedPaperAnnotations("parsed_annotations.ser")
-  val reachExtractions = utils.readSerializedExtractions("results2016.ser")
+  val parsedAnnotations = utils.readSerializedPaperAnnotations(inputPaperData)
+  val reachExtractions = utils.readSerializedExtractions(inputExtractions)
 
   val parsedEvents = parsedAnnotations.mapValues(t => utils.getEvents(t.extractions))
   val reachEvents = reachExtractions.mapValues(utils.getEvents)
 
-  for(pmcid <- parsedEvents.keys) yield {
+  for (pmcid <- parsedEvents.keys) yield {
     val parsed = parsedEvents(pmcid)
     val extracted = reachEvents(pmcid)
     val intersection = getIntersection(parsed, extracted)

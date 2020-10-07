@@ -1,15 +1,21 @@
+import com.typesafe.config.ConfigFactory
 import com.typesafe.scalalogging.LazyLogging
 import org.clulab.utils.Serializer
 
+/** Represents and event and entity mention pair */
 case class Pair(event:PaperExtraction, contextMention:PaperExtraction, isContext:Boolean)
 
-object GeneratePairs extends App with LazyLogging{
+/**
+ * Create the raw entity pairs to be used for feature extraction down the pipeline
+ */
+object GeneratePairs extends App with LazyLogging {
 
-  val inputPaperData = "parsed_annotations.ser"
-  val inputExtractions = "results2016.ser"
-  val outputPairsPath = "pairs2016.ser"
+  val config = ConfigFactory.load().getConfig("generatePairs")
+  val inputPaperData = config.getString("inputPaperData")
+  val inputExtractions = config.getString("inputExtractions")
+  val outputPairsPath = config.getString("outputFile")
 
-  def generatePairs(paperData:ManuallyAnnotatedData, extractions:Seq[PaperExtraction], validContextIds:Set[String]):Iterable[Pair] = {
+  def generatePairs(paperData: ManuallyAnnotatedData, extractions: Seq[PaperExtraction], validContextIds: Set[String]): Iterable[Pair] = {
     val annotations = paperData.annotations
     val textBoundMentions = extractions filter (m => m.grounding != "Event")
 

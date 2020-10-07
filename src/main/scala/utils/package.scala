@@ -1,6 +1,9 @@
 import org.clulab.processors.Document
 import org.clulab.utils.Serializer
 
+/**
+ * Utility functions shared by the scripts
+ */
 package object utils {
   def readSerializedPaperAnnotations(path:String):Map[String, ManuallyAnnotatedData] = {
     val data = Serializer.load[Map[String, ManuallyAnnotatedData]](path)

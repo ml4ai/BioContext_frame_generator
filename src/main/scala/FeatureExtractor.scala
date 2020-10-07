@@ -1,3 +1,5 @@
+import java.io.PrintWriter
+
 import com.typesafe.scalalogging.LazyLogging
 import org.clulab.processors.Document
 import org.clulab.struct.Interval
@@ -10,6 +12,7 @@ case class PairFeatures(pmcid:String,
                         contextInterval:Interval,
                         sentenceDistance:Int,
                         contextFrequency:Int,
+                        contextGrounding:String,
                         isClosestContextClass:Boolean,
                         contextSentencePresentTense:Boolean,
                         eventSentencePresentTense:Boolean,
@@ -18,22 +21,70 @@ case class PairFeatures(pmcid:String,
                         contextSentenceFirstPerson:Boolean,
                         eventSentenceFirstPerson:Boolean,
                         dependencyDistance:Int,
-                        isContext:Boolean) // True for the positive case
+                        contextHasNegation:Boolean,
+                        eventHasNegation:Boolean,
+                        isContext:Boolean) { // True for the positive case
+  override def toString: String = {
+    Seq(s"$pmcid",
+      s"$isContext",
+      s"E${eventSentence}_${eventInterval.start}_${eventInterval.end}",
+      s"$contextGrounding",
+      s"$isClosestContextClass",
+      s"$contextFrequency",
+      s"$contextHasNegation",
+      s"$contextSentenceFirstPerson",
+      s"$contextSentencePastTense",
+      s"$contextSentencePresentTense",
+      s"$dependencyDistance",
+      s"$eventHasNegation",
+      s"$eventSentenceFirstPerson",
+      s"$eventSentencePastTense",
+      s"$eventSentencePresentTense",
+      s"$sentenceDistance"
+    ).mkString("\t")
+  }
+}
 
-object FeatureExtractor extends App with LazyLogging{
+object PairFeatures {
+  val headerRow: String = {
+    Seq("PMCID",
+      "label",
+      "EvtID",
+      "CtxID",
+      "closesCtxOfClass",
+      "context_frequency",
+      "ctxNegationIntTail",
+      "ctxSentenceFirstPerson",
+      "ctxSentencePastTense",
+      "ctxSentencePresentTense",
+      "dependencyDistance",
+      "evtNegationInTail",
+      "evtSentenceFirstPerson",
+      "evtSentencePastTense",
+      "evtSentencePresentTense",
+      "sentenceDistance").mkString("\t")
+  }
+
+  def mkTsv(rows: Iterable[PairFeatures]): String =
+    (headerRow :: rows.map(_.toString).toList).mkString("\n")
+}
+
+
+object FeatureExtractor extends App with LazyLogging {
   val inputPath = "pairs2016.ser"
   val documentsPath = "results2016.ser"
   val outputPath = "features2016.ser"
+  val outputTsvPath = "features2016.tsv"
   val paperFilesPath = "parsed_annotations.ser"
 
-  def extractFeaturePairs(pmcid:String, pair:Pair, doc:Document,
-                          counts:Map[String, Int],
-                          locations:Map[String, Seq[Int]]) = {
+  def extractFeaturePairs(pmcid: String, pair: Pair, doc: Document,
+                          counts: Map[String, Int],
+                          locations: Map[String, Seq[Int]]) = {
     val event = pair.event
     val context = pair.contextMention
 
     // Helper functions to extract features
-    def isSentencePresentTense(sent:Int, doc:Document):Boolean = {
+    def isSentencePresentTense(sent: Int, doc: Document): Boolean = {
       val sentence = doc.sentences(sent)
       val deps = sentence.dependencies.get
       val rootTags = deps.roots map sentence.tags.get
@@ -46,7 +97,7 @@ object FeatureExtractor extends App with LazyLogging{
 
     }
 
-    def isSentencePastTense(sent:Int, doc:Document):Boolean = {
+    def isSentencePastTense(sent: Int, doc: Document): Boolean = {
       val sentence = doc.sentences(sent)
       val deps = sentence.dependencies.get
       val rootTags = deps.roots map sentence.tags.get
@@ -56,14 +107,14 @@ object FeatureExtractor extends App with LazyLogging{
         (rootTags contains "VBN")
     }
 
-    def isSentenceFirstPerson(sent:Int, doc:Document):Boolean = {
+    def isSentenceFirstPerson(sent: Int, doc: Document): Boolean = {
       val sentence = doc.sentences(sent)
       val tags = sentence.tags.get
 
       // Get the indices noun phrases
       val chunks = sentence.chunks.get
       val npIndices =
-        chunks.zipWithIndex.collect{ case (tag, ix) if tag.endsWith("-NP") => ix}
+        chunks.zipWithIndex.collect { case (tag, ix) if tag.endsWith("-NP") => ix }
 
       // Get the POS tag in the noun phrases
       val npTags = npIndices map (ix => (ix, tags(ix)))
@@ -79,9 +130,9 @@ object FeatureExtractor extends App with LazyLogging{
       (prps contains "i") || (prps contains "we") || (prps contains "us") || (prps contains "our")
     }
 
-    def calculateDependencyDistance(ctx:PaperExtraction, evt:PaperExtraction):Int = {
+    def calculateDependencyDistance(ctx: PaperExtraction, evt: PaperExtraction): Int = {
       // If they appear in the same sentence, then compute the distance in dependency hops between them
-      if(ctx.sent == evt.sent){
+      if (ctx.sent == evt.sent) {
         val deps = doc.sentences(event.sent).dependencies.get
         val allDistances =
           (for {
@@ -90,7 +141,7 @@ object FeatureExtractor extends App with LazyLogging{
           }
             yield deps.shortestPath(i, j, ignoreDirection = true).size).filter(_ > 0)
 
-        if(allDistances.nonEmpty)
+        if (allDistances.nonEmpty)
           allDistances.min
         else
           doc.sentences(event.sent).size // If there is no path (I can't see why not) then return the theoretical max
@@ -119,13 +170,26 @@ object FeatureExtractor extends App with LazyLogging{
       }
     }
 
+    def findNegationInTails(mention: PaperExtraction): Boolean = {
+      val deps = doc.sentences(mention.sent).dependencies.get
+      val labels =
+        for {
+          ix <- mention.interval
+          (target, label) <- deps.getOutgoingEdges(ix)
+          if !(mention.interval contains target)
+        }
+          yield label
+
+      labels contains "neg"
+    }
+
     // Here I compute the features
     val sentenceDistance = Math.abs(event.sent - context.sent)
     val contextCount = counts(context.grounding)
     val closestContextOf = {
       val minimumDistances =
         locations mapValues (sentences => sentences.map(s => Math.abs(s - event.sent)).min)
-        val contextsByDistance = minimumDistances.toSeq.groupBy(_._2).mapValues(_.map(_._1).toSet)
+      val contextsByDistance = minimumDistances.toSeq.groupBy(_._2).mapValues(_.map(_._1).toSet)
       val shortestDistance = contextsByDistance.keys.min
       contextsByDistance(shortestDistance) contains context.grounding
     }
@@ -135,15 +199,19 @@ object FeatureExtractor extends App with LazyLogging{
     val contextSentencePastTense = isSentencePastTense(context.sent, doc)
     val eventSentencePastTense = isSentencePastTense(event.sent, doc)
 
-    val conetxtSentenceFirstPerson = isSentenceFirstPerson(context.sent, doc)
+    val contextSentenceFirstPerson = isSentenceFirstPerson(context.sent, doc)
     val eventSentenceFirstPerson = isSentenceFirstPerson(event.sent, doc)
 
     val dependencyDistance = calculateDependencyDistance(context, event)
 
+    val contextHasNegation = findNegationInTails(context)
+    val eventHasNegation = findNegationInTails(event)
+
     PairFeatures(pmcid, event.sent, event.interval, context.sent, context.interval,
-      sentenceDistance, contextCount, closestContextOf, contextSentencePresentTense, eventSentencePresentTense,
-      contextSentencePastTense, eventSentencePastTense, conetxtSentenceFirstPerson, eventSentenceFirstPerson,
-      dependencyDistance,
+      sentenceDistance, contextCount, context.grounding, closestContextOf,
+      contextSentencePresentTense, eventSentencePresentTense,
+      contextSentencePastTense, eventSentencePastTense, contextSentenceFirstPerson, eventSentenceFirstPerson,
+      dependencyDistance, contextHasNegation, eventHasNegation,
       pair.isContext)
   }
 
@@ -163,30 +231,39 @@ object FeatureExtractor extends App with LazyLogging{
   val paperExtractions = utils.readSerializedExtractions(documentsPath)
 
   // Compute the extraction counts for each paper
-  val contextCounts = paperExtractions.mapValues{
+  val contextCounts = paperExtractions.mapValues {
     extractions =>
       extractions.groupBy(e => e.grounding).mapValues(_.size)
   }
 
   val contextIds = utils.generateValidContextIds(paperFilesData)
 
-  val mentionLocations:Map[String, Map[String, Seq[Int]]] = paperExtractions.mapValues{
-   extractions =>
-       extractions filter (contextIds contains _.grounding) groupBy (_.grounding) mapValues (_.map(_.sent).sorted)
+  val mentionLocations: Map[String, Map[String, Seq[Int]]] = paperExtractions.mapValues {
+    extractions =>
+      extractions filter (contextIds contains _.grounding) groupBy (_.grounding) mapValues (_.map(_.sent).sorted)
   }
 
   // Generate the features for each pair on all papers
   logger.info(s"Extracting features")
   val rows =
-    for{
-      (pmcid, pairs) <- paperPairs
+    (for {
+      (pmcid, pairs) <- paperPairs.par
       pair <- pairs
     } yield {
       extractFeaturePairs(pmcid, pair, documents(pmcid), contextCounts(pmcid), mentionLocations(pmcid))
-    }
+    }).seq
 
 
   // Save the features into a serialized file
   logger.info(s"Saving output to $outputPath")
   Serializer.save(rows, outputPath)
+
+  // Generate the tsv file to be opened with pandas
+  logger.info(s"Saving the features as a tsv to $outputTsvPath")
+  val tsvContents = PairFeatures.mkTsv(rows)
+  val pw = new PrintWriter(s"$outputTsvPath")
+  pw.print(tsvContents)
+  pw.close()
 }
+
+

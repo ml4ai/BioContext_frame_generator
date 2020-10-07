@@ -1,5 +1,6 @@
 import java.io.PrintWriter
 
+import com.typesafe.config.ConfigFactory
 import com.typesafe.scalalogging.LazyLogging
 import org.clulab.processors.Document
 import org.clulab.struct.Interval
@@ -71,11 +72,13 @@ object PairFeatures {
 
 
 object FeatureExtractor extends App with LazyLogging {
-  val inputPath = "pairs2016.ser"
-  val documentsPath = "results2016.ser"
-  val outputPath = "features2016.ser"
-  val outputTsvPath = "features2016.tsv"
-  val paperFilesPath = "parsed_annotations.ser"
+
+  val config = ConfigFactory.load().getConfig("featureExtractor")
+  val inputPath = config.getString("inputPairs")
+  val documentsPath = config.getString("inputExtractions")
+  val outputPath = config.getString("outputFile")
+  val outputTsvPath = config.getString("outputTsvFile")
+  val paperFilesPath = config.getString("inputPaperData")
 
   def extractFeaturePairs(pmcid: String, pair: Pair, doc: Document,
                           counts: Map[String, Int],

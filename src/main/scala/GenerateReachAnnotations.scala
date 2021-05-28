@@ -19,7 +19,7 @@ case class PaperExtraction(sent:Int, interval:Interval, text:String, grounding:S
  */
 object GenerateReachAnnotations extends App with LazyLogging {
 
-  val config = ConfigFactory.load("generateReachAnnotations")
+  val config = ConfigFactory.load.getConfig("generateReachAnnotations")
 
   val paperFilesDir = config.getString("filesDirectory")
   val outputPath = config.getString("outputFile")

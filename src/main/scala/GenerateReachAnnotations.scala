@@ -1,5 +1,4 @@
-import java.io.File
-
+import java.io.{File, FileWriter}
 import com.typesafe.config.ConfigFactory
 import com.typesafe.scalalogging.LazyLogging
 import org.clulab.processors.Document
@@ -12,11 +11,11 @@ import org.clulab.utils.Serializer
 import scala.io.Source
 
 /** Represents a paper extraction */
-case class PaperExtraction(sent:Int, interval:Interval, text:String, grounding:String)
+case class PaperExtraction(sent: Int, interval: Interval, text: String, grounding: String)
 
 /**
- * Generates REACH annotations for the papers given the version configured in build.sbt
- */
+  * Generates REACH annotations for the papers given the version configured in build.sbt
+  */
 object GenerateReachAnnotations extends App with LazyLogging {
 
   val config = ConfigFactory.load.getConfig("generateReachAnnotations")
@@ -47,10 +46,10 @@ object GenerateReachAnnotations extends App with LazyLogging {
   procAnnotator.annotate("test")
   val reachSystem = new ReachSystem(proc = Some(procAnnotator))
 
-  val directories = for {f <- new File(paperFilesDir).listFiles(); if f.isDirectory} yield f
+  val directories = for { f <- new File(paperFilesDir).listFiles(); if f.isDirectory } yield f
 
   val data =
-    (for {dir <- directories.par} yield {
+    (for { dir <- directories.par } yield {
       val path = dir.getAbsolutePath
       val pmcid = dir.getName
       logger.info(s"Processing $pmcid ...")
@@ -59,13 +58,48 @@ object GenerateReachAnnotations extends App with LazyLogging {
       val tups =
         extractions collect {
           case e: BioEventMention =>
-            PaperExtraction(e.sentence, e.tokenInterval, e.text, "Event")
+            PaperExtraction(e.sentence, e.tokenInterval, e.foundBy, "Event")
           case m: BioTextBoundMention =>
-            PaperExtraction(m.sentence, m.tokenInterval, m.text, m.grounding match { case Some(kb) => kb.nsId; case None => "" })
+            PaperExtraction(
+              m.sentence,
+              m.tokenInterval,
+              m.text,
+              m.grounding match { case Some(kb) => kb.nsId; case None => "" }
+            )
         }
+
+      val event_output = new File(paperFilesDir + "/" + pmcid + "/event_intervals.txt")
+      val context_output = new File(paperFilesDir + "/" + pmcid + "/mention_intervals.txt")
+      event_output.createNewFile()
+      context_output.createNewFile()
+      val event_output_writer = new FileWriter(event_output)
+      val context_output_writer = new FileWriter(context_output)
+      var sent_idx = 0
+      var event_sent = ""
+      var context_sent = ""
+      for (tup <- tups.sortBy(extraction => extraction.sent)) {
+        // If there are no more extractions for this sentence, write the
+        // results to file before moving on
+        if (tup.sent > sent_idx) {
+          event_output_writer.write(sent_idx.toString + event_sent + "\n")
+          context_output_writer.write(sent_idx.toString + context_sent + "\n")
+          sent_idx = tup.sent
+          event_sent = ""
+          context_sent = ""
+        }
+
+        if (tup.grounding == "Event") {
+          event_sent += " " + tup.interval.start + "-" + tup.interval.end
+          event_sent += "-" + tup.text.split(",")(0)
+        } else {
+          context_sent += " " + tup.interval.start + "%" + (tup.interval.end - 1) + "%"
+          context_sent += tup.text.split(' ').mkString("_") + "%" + tup.grounding
+        }
+      }
+      event_output_writer.close()
+      context_output_writer.close()
       pmcid -> (tups, doc)
     }).seq
-
 
   logger.info(s"Saving output into $outputPath")
   Serializer.save(data, outputPath)

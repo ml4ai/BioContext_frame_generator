@@ -4,8 +4,8 @@ import org.clulab.struct.Interval
 import scala.collection.mutable.ListBuffer
 
 /**
- * Utility to compute the intersection of the annotated events and the paper extractions
- */
+  * Utility to compute the intersection of the annotated events and the paper extractions
+  */
 object FindIntersection extends App {
 
   val config = ConfigFactory.load().getConfig("findIntersection")
@@ -13,7 +13,10 @@ object FindIntersection extends App {
   val inputPaperData = config.getString("inputPaperData")
   val inputExtractions = config.getString("inputExtractions")
 
-  def getIntersection(left: Seq[PaperExtraction], right: Seq[PaperExtraction]): Seq[PaperExtraction] = {
+  def getIntersection(
+      left: Seq[PaperExtraction],
+      right: Seq[PaperExtraction]
+  ): Seq[PaperExtraction] = {
     // Small helper function
     def intersects(a: Interval, b: Interval): Boolean = {
       val (shorter, longer) = if (a.size <= b.size) (a, b) else (b, a)
@@ -27,16 +30,16 @@ object FindIntersection extends App {
 
     val sentences =
       ((left map (_.sent)) ++
-      (right map (_.sent))).distinct
+        (right map (_.sent))).distinct
 
     val gpBySentLeft = left.groupBy(_.sent)
     val gpBySentRight = right.groupBy(_.sent)
 
     val intersection = ListBuffer[PaperExtraction]()
 
-    for(sentIx <- sentences){
-      if((gpBySentLeft contains sentIx) && (gpBySentRight contains sentIx)){
-        for{
+    for (sentIx <- sentences) {
+      if ((gpBySentLeft contains sentIx) && (gpBySentRight contains sentIx)) {
+        for {
           l <- gpBySentLeft(sentIx)
           r <- gpBySentRight(sentIx)
         } {
@@ -60,7 +63,8 @@ object FindIntersection extends App {
     val extracted = reachEvents(pmcid)
     val intersection = getIntersection(parsed, extracted)
 
-
-    println(s"$pmcid Original size: ${parsed.size}, Extracted size: ${extracted.distinct.size}, Intersection: ${intersection.size}")
+    println(
+      s"$pmcid Original size: ${parsed.size}, Extracted size: ${extracted.distinct.size}, Intersection: ${intersection.size}"
+    )
   }
 }

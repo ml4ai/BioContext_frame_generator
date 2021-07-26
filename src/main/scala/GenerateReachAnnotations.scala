@@ -48,7 +48,6 @@ object GenerateReachAnnotations extends App with LazyLogging {
 
   val directories = for { f <- new File(paperFilesDir).listFiles(); if f.isDirectory } yield f
 
-  val start_time = System.nanoTime()
   val data =
     (for { dir <- directories.par } yield {
       val path = dir.getAbsolutePath
@@ -101,8 +100,7 @@ object GenerateReachAnnotations extends App with LazyLogging {
       context_output_writer.close()
       pmcid -> (tups, doc)
     }).seq
-  val end_time = System.nanoTime()
-  println("Elapsed time: " + (end_time - start_time) * 1e9 + "s")
+
   logger.info(s"Saving output into $outputPath")
   Serializer.save(data, outputPath)
 

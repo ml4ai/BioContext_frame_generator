@@ -95,7 +95,7 @@ object GenerateReachAnnotations extends App with LazyLogging {
             case Some(kb) =>
               context_sent += " " + m.tokenInterval.start + "%"
               context_sent += (m.tokenInterval.end - 1) + "%"
-              context_sent += m.text.split(' ').mkString("_") + "%"
+              context_sent += "_" + "%" // Hack to maintain old logic
               context_sent += kb.nsId
             case _ => // If there isn't a kb match, skip this context mention
           }

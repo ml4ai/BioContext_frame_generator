@@ -1,3 +1,5 @@
+import ai.lum.nxmlreader.NxmlReader
+
 import java.io.{File, FileWriter}
 import com.typesafe.config.ConfigFactory
 import com.typesafe.scalalogging.LazyLogging
@@ -8,6 +10,7 @@ import org.clulab.reach.mentions.{BioEventMention, BioMention, BioTextBoundMenti
 import org.clulab.struct.Interval
 import org.clulab.utils.Serializer
 
+import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 import scala.io.Source
 
 /** Represents a paper extraction */
@@ -20,24 +23,17 @@ object GenerateReachAnnotations extends App with LazyLogging {
 
   val config = ConfigFactory.load.getConfig("generateReachAnnotations")
 
-  val paperFilesDir = config.getString("filesDirectory")
-  val outputPath = config.getString("outputFile")
+  val inputFilesDir = config.getString("inputDirectory")
+  val outputFilesDir = config.getString("outputDirectory")
 
-  def readTokens(path: String): Seq[Seq[String]] = {
-    val lines = Source.fromFile(path).getLines().toList
-    val tokens = lines map (_.split(" ").toList)
-    tokens
-  }
+  val nxmlReader = new NxmlReader(
+    config.getStringList("ignoreSections").asScala.toSet
+  )
 
-  def extractFrom(path: String): (Seq[BioMention], Document) = {
-    val tokens = readTokens(path + "/sentences.txt")
-
-    val doc = procAnnotator.mkDocumentFromTokens(tokens)
-    doc.id = Some(path)
-    doc.text = Some(tokens.map(_.mkString(" ")).mkString("\n"))
-    procAnnotator.annotate(doc)
-
-    (reachSystem extractFrom doc, doc)
+  def extractFrom(path: String, pmcid: String): (Seq[BioMention], Document) = {
+    val nxml_doc = nxmlReader.read(new File(path + "/" + pmcid + ".nxml"))
+    val proc_doc = reachSystem.mkDoc(nxml_doc)
+    (reachSystem.extractFrom(proc_doc), proc_doc)
   }
 
   // initialize ReachSystem
@@ -46,62 +42,67 @@ object GenerateReachAnnotations extends App with LazyLogging {
   procAnnotator.annotate("test")
   val reachSystem = new ReachSystem(proc = Some(procAnnotator))
 
-  val directories = for { f <- new File(paperFilesDir).listFiles(); if f.isDirectory } yield f
+  val directories = for { f <- new File(inputFilesDir).listFiles(); if f.isDirectory } yield f
 
-  val data =
-    (for { dir <- directories.par } yield {
-      val path = dir.getAbsolutePath
-      val pmcid = dir.getName
-      logger.info(s"Processing $pmcid ...")
-      val (extractions, doc) = extractFrom(path)
-      logger.info(s"Finished $pmcid")
-      val tups =
-        extractions collect {
-          case e: BioEventMention =>
-            PaperExtraction(e.sentence, e.tokenInterval, e.foundBy, "Event")
-          case m: BioTextBoundMention =>
-            PaperExtraction(
-              m.sentence,
-              m.tokenInterval,
-              m.text,
-              m.grounding match { case Some(kb) => kb.nsId; case None => "" }
-            )
-        }
+  for { dir <- directories.par } yield {
+    val path = dir.getAbsolutePath
+    val pmcid = dir.getName
+    logger.info(s"Processing $pmcid ...")
+    val (extractions, doc) = extractFrom(path, pmcid)
+    logger.info(s"Finished $pmcid")
 
-      val event_output = new File(paperFilesDir + "/" + pmcid + "/event_intervals.txt")
-      val context_output = new File(paperFilesDir + "/" + pmcid + "/mention_intervals.txt")
-      event_output.createNewFile()
-      context_output.createNewFile()
-      val event_output_writer = new FileWriter(event_output)
-      val context_output_writer = new FileWriter(context_output)
-      var sent_idx = 0
-      var event_sent = ""
-      var context_sent = ""
-      for (tup <- tups.sortBy(extraction => extraction.sent)) {
-        // If there are no more extractions for this sentence, write the
-        // results to file before moving on
-        if (tup.sent > sent_idx) {
-          event_output_writer.write(sent_idx.toString + event_sent + "\n")
-          context_output_writer.write(sent_idx.toString + context_sent + "\n")
-          sent_idx = tup.sent
-          event_sent = ""
-          context_sent = ""
-        }
+    // Create output directory for this paper
+    val paper_output_dir = new File(outputFilesDir + "/" + pmcid)
+    paper_output_dir.mkdir()
 
-        if (tup.grounding == "Event") {
-          event_sent += " " + tup.interval.start + "-" + tup.interval.end
-          event_sent += "-" + tup.text.split(",")(0)
-        } else {
-          context_sent += " " + tup.interval.start + "%" + (tup.interval.end - 1) + "%"
-          context_sent += tup.text.split(' ').mkString("_") + "%" + tup.grounding
-        }
+    // Write sentences to disk
+    val text_output = new File(paper_output_dir.getAbsolutePath + "/sentences.txt")
+    text_output.createNewFile()
+    val text_output_writer = new FileWriter(text_output)
+    for (sent <- doc.sentences) {
+      text_output_writer.write(sent.words.mkString(" ") + "\n")
+    }
+    text_output_writer.close()
+
+    // Write context mentions and event mentions to disk
+    val event_output = new File(paper_output_dir.getAbsolutePath + "/event_intervals.txt")
+    val context_output = new File(paper_output_dir.getAbsolutePath + "/mention_intervals.txt")
+    event_output.createNewFile()
+    context_output.createNewFile()
+    val event_output_writer = new FileWriter(event_output)
+    val context_output_writer = new FileWriter(context_output)
+    var sent_idx = 0
+    var event_sent = ""
+    var context_sent = ""
+    for (extract <- extractions.sortBy(ext => ext.sentence)) {
+      // If there are no more extractions for this sentence, write the
+      // results to file before moving on
+      if (extract.sentence > sent_idx) {
+        event_output_writer.write(sent_idx.toString + event_sent + "\n")
+        context_output_writer.write(sent_idx.toString + context_sent + "\n")
+        sent_idx = extract.sentence
+        event_sent = ""
+        context_sent = ""
       }
-      event_output_writer.close()
-      context_output_writer.close()
-      pmcid -> (tups, doc)
-    }).seq
 
-  logger.info(s"Saving output into $outputPath")
-  Serializer.save(data, outputPath)
+      extract match {
+        case e: BioEventMention =>
+          event_sent += " " + e.tokenInterval.start + "-"
+          event_sent += e.tokenInterval.end + "-"
+          event_sent += e.foundBy.split(",")(0)
+        case m: BioTextBoundMention =>
+          context_sent += " " + m.tokenInterval.start + "%"
+          context_sent += (m.tokenInterval.end - 1) + "%"
+          context_sent += m.text.split(' ').mkString("_") + "%"
+          context_sent += (m.grounding match {
+            case Some(kb) => kb.nsId;
+            case None     => ""
+          })
+      }
+    }
 
+    event_output_writer.close()
+    context_output_writer.close()
+  }
+  logger.info(s"Output saved into $outputFilesDir")
 }

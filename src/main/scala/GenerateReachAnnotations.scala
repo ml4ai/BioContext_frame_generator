@@ -91,13 +91,15 @@ object GenerateReachAnnotations extends App with LazyLogging {
           event_sent += e.tokenInterval.end + "-"
           event_sent += e.foundBy.split(",")(0)
         case m: BioTextBoundMention =>
-          context_sent += " " + m.tokenInterval.start + "%"
-          context_sent += (m.tokenInterval.end - 1) + "%"
-          context_sent += m.text.split(' ').mkString("_") + "%"
-          context_sent += (m.grounding match {
-            case Some(kb) => kb.nsId;
-            case None     => ""
-          })
+          m.grounding match {
+            case Some(kb) =>
+              context_sent += " " + m.tokenInterval.start + "%"
+              context_sent += (m.tokenInterval.end - 1) + "%"
+              context_sent += m.text.split(' ').mkString("_") + "%"
+              context_sent += kb.nsId
+            case _ => // If there isn't a kb match, skip this context mention
+          }
+        case _ => // Ignore other extractions
       }
     }
 
